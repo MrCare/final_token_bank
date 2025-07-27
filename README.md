@@ -18,3 +18,8 @@
 
 2. 智能购买（白名单 + permit 授权）
 ![alt text](image-8.png)
+
+## PERMIT2
+
+1. Permit2 购买
+![alt text](image-9.png)
