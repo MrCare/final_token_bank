@@ -1,0 +1,19 @@
+{
+  "name": "CBR400R",
+  "description": "CBR400R of Mr.Car",
+  "image": "ipfs://bafybeidxvr7j2gcb2zk5oerf7ipjfjohzxl6ckgluxlilocmiiesfw4fey",
+  "external_url": "https://beige-calm-crow-34.mypinata.cloud/ipfs/bafybeidxvr7j2gcb2zk5oerf7ipjfjohzxl6ckgluxlilocmiiesfw4fey",
+  "animation_url": "https://beige-calm-crow-34.mypinata.cloud/ipfs/bafybeidxvr7j2gcb2zk5oerf7ipjfjohzxl6ckgluxlilocmiiesfw4fey",
+  "attributes": [
+    {
+      "trait_type": "miles",
+      "value": "7000"
+    }
+  ],
+  "properties": {
+    "category": "Sports Car",
+    "creator": "CarNFT Team",
+    "edition": "Limited Edition",
+    "total_supply": 1
+  }
+}

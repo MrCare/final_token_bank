@@ -1,0 +1,19 @@
+{
+  "name": "VIEW",
+  "description": "VIEW of Mr.Car",
+  "image": "ipfs://bafybeicsg2jqay5vegcikrvnxuzotul7dpgl67belw5iabnwqgybzpymcq",
+  "external_url": "https://beige-calm-crow-34.mypinata.cloud/ipfs/bafybeicsg2jqay5vegcikrvnxuzotul7dpgl67belw5iabnwqgybzpymcq",
+  "animation_url": "https://beige-calm-crow-34.mypinata.cloud/ipfs/bafybeicsg2jqay5vegcikrvnxuzotul7dpgl67belw5iabnwqgybzpymcq",
+  "attributes": [
+    {
+      "trait_type": "miles",
+      "value": "5000"
+    }
+  ],
+  "properties": {
+    "category": "Sports Car",
+    "creator": "CarNFT Team",
+    "edition": "Limited Edition",
+    "total_supply": 1
+  }
+}

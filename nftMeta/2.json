@@ -1,0 +1,19 @@
+{
+  "name": "GSX250R",
+  "description": "GSX250R of Mr.Car",
+  "image": "ipfs://bafybeif3b52pwzr7xtrhejwvh2mbw5flih4ijxfy4ebb5g3izwcb2f4ewq",
+  "external_url": "https://beige-calm-crow-34.mypinata.cloud/ipfs/bafybeif3b52pwzr7xtrhejwvh2mbw5flih4ijxfy4ebb5g3izwcb2f4ewq",
+  "animation_url": "https://beige-calm-crow-34.mypinata.cloud/ipfs/bafybeif3b52pwzr7xtrhejwvh2mbw5flih4ijxfy4ebb5g3izwcb2f4ewq",
+  "attributes": [
+    {
+      "trait_type": "miles",
+      "value": "11000"
+    }
+  ],
+  "properties": {
+    "category": "Sports Car",
+    "creator": "CarNFT Team",
+    "edition": "Limited Edition",
+    "total_supply": 1
+  }
+}
