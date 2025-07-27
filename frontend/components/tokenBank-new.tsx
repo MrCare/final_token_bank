@@ -7,7 +7,14 @@ import { useAccount, useReadContract, useWriteContract, useWaitForTransactionRec
 import { formatEther, parseEther } from 'viem';
 import { signTypedData } from '@wagmi/core';
 import { config } from '@/lib/wagmi';
-import { TOKEN_ADDRESS, TOKEN_ABI, TOKENBANK_ADDRESS, TOKENBANK_ABI } from '@/lib/contracts';
+import { 
+  TOKEN_ADDRESS, 
+  TOKEN_ABI, 
+  TOKENBANK_ADDRESS, 
+  TOKENBANK_ABI,
+  PERMIT2_ADDRESS,
+  PERMIT2_ABI 
+} from '@/lib/contracts';
 import { useRefreshStore } from '@/lib/store';
 import { 
   PageContainer, 
@@ -21,11 +28,38 @@ import {
   InputField
 } from './ui/base-components';
 
+// Permit2 相关类型定义
+const PERMIT2_DOMAIN = {
+  name: 'Permit2',
+  version: '1',
+  chainId: 31337,
+  verifyingContract: PERMIT2_ADDRESS, // 你的 Permit2 合约地址
+} as const;
+
+const PERMIT2_TYPES = {
+  PermitSingle: [
+    { name: 'details', type: 'PermitDetails' },
+    { name: 'spender', type: 'address' },
+    { name: 'sigDeadline', type: 'uint256' },
+  ],
+  PermitDetails: [
+    { name: 'token', type: 'address' },
+    { name: 'amount', type: 'uint160' },
+    { name: 'expiration', type: 'uint48' },
+    { name: 'nonce', type: 'uint48' },
+  ],
+} as const;
+
 export function TokenBankNew() {
   const { address, isConnected, chainId } = useAccount();
   const [depositAmount, setDepositAmount] = useState('');
+  const [permit2DepositAmount, setPermit2DepositAmount] = useState('');
   const [withdrawAmount, setWithdrawAmount] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isPermit2Loading, setIsPermit2Loading] = useState(false);
+  const [depositMethod, setDepositMethod] = useState<'permit' | 'permit2'>('permit');
+  const [currentTimestamp, setCurrentTimestamp] = useState(Math.floor(Date.now() / 1000));
+  
   const { writeContract, data: hash } = useWriteContract();
   const { isLoading: isConfirming, isSuccess: isConfirmed } = useWaitForTransactionReceipt({
     hash,
@@ -33,7 +67,7 @@ export function TokenBankNew() {
 
   const triggerRefresh = useRefreshStore((state) => state.triggerRefresh);
 
-  // 读取代币名称和符号（不需要连接钱包）
+  // 读取代币名称和符号
   const { data: tokenName } = useReadContract({
     address: TOKEN_ADDRESS,
     abi: TOKEN_ABI,
@@ -46,7 +80,7 @@ export function TokenBankNew() {
     functionName: 'symbol',
   });
 
-  // 读取银行总资产（不需要连接钱包）
+  // 读取银行总资产
   const { data: totalAssets, refetch: refetchTotalAssets } = useReadContract({
     address: TOKENBANK_ADDRESS,
     abi: TOKENBANK_ABI,
@@ -75,6 +109,7 @@ export function TokenBankNew() {
     },
   });
 
+  // 读取 Token nonce (用于原生 permit)
   const { data: nonce, refetch: refetchNonce } = useReadContract({
     address: TOKEN_ADDRESS,
     abi: TOKEN_ABI,
@@ -85,6 +120,46 @@ export function TokenBankNew() {
     },
   });
 
+  // 直接从 Permit2 合约获取 nonce（推荐）
+  const { data: permit2DirectAllowance, refetch: refetchPermit2DirectAllowance } = useReadContract({
+    address: PERMIT2_ADDRESS,
+    abi: PERMIT2_ABI,
+    functionName: 'allowance',
+    args: address ? [address, TOKEN_ADDRESS, TOKENBANK_ADDRESS] : undefined,
+    query: {
+      enabled: !!address,
+    },
+  });
+
+  // 👇 在这里添加
+  const { data: tokenToPermit2Allowance, refetch: refetchTokenPermit2 } = useReadContract({
+    address: TOKEN_ADDRESS,
+    abi: TOKEN_ABI,
+    functionName: 'allowance',
+    args: address ? [address, PERMIT2_ADDRESS] : undefined,
+    query: {
+      enabled: !!address,
+    },
+  });
+
+  // 计算下一个可用的 nonce
+  const getNextPermit2Nonce = () => {
+    if (permit2DirectAllowance && permit2DirectAllowance[2] !== undefined) {
+      // 如果当前授权已过期或金额为0，使用当前 nonce
+      const currentTime = Math.floor(Date.now() / 1000);
+      const expiration = Number(permit2DirectAllowance[1]);
+      const amount = permit2DirectAllowance[0];
+
+      if (expiration < currentTime || amount === BigInt(0)) {
+        return Number(permit2DirectAllowance[2]);
+      } else {
+        // 如果当前授权仍然有效，使用下一个 nonce
+        return Number(permit2DirectAllowance[2]) + 1;
+      }
+    }
+    return 0; // 默认从 0 开始
+  };
+
   // 交易确认后刷新数据
   useEffect(() => {
     if (isConfirmed) {
@@ -92,12 +167,13 @@ export function TokenBankNew() {
       refetchUserShares();
       refetchUserAssets();
       refetchNonce();
+      refetchPermit2DirectAllowance(); // 刷新 Permit2 nonce
       triggerRefresh();
       console.log('交易已确认，数据已更新');
     }
-  }, [isConfirmed, refetchTotalAssets, refetchUserShares, refetchUserAssets, refetchNonce, triggerRefresh]);
+  }, [isConfirmed, refetchTotalAssets, refetchUserShares, refetchUserAssets, refetchNonce, refetchPermit2DirectAllowance, triggerRefresh]);
 
-  // 签名存款
+  // 原生 permit 存款
   const handlePermitDeposit = async () => {
     if (!address || !depositAmount || !chainId || !tokenName || nonce === undefined) return;
 
@@ -152,6 +228,69 @@ export function TokenBankNew() {
     }
   };
 
+  // Permit2 存款
+  const handlePermit2Deposit = async () => {
+    if (!address || !permit2DepositAmount || !chainId) return;
+
+    try {
+      setIsPermit2Loading(true);
+      const assets = parseEther(permit2DepositAmount);
+      const amount = BigInt(assets.toString());
+      const expiration = Math.floor(Date.now() / 1000) + 864000; // 24小时过期
+      const nonce = getNextPermit2Nonce(); // 使用正确的 nonce
+      const sigDeadline = Math.floor(Date.now() / 1000) + 864000; // 1小时签名过期
+
+      console.log('Permit2 参数:', {
+        token: TOKEN_ADDRESS,
+        amount: amount.toString(),
+        expiration,
+        nonce,
+        spender: TOKENBANK_ADDRESS,
+        sigDeadline
+      });
+
+      // 生成 Permit2 签名
+      const signature = await signTypedData(config, {
+        account: address,
+        domain: PERMIT2_DOMAIN,
+        types: PERMIT2_TYPES,
+        primaryType: 'PermitSingle',
+        message: {
+          details: {
+            token: TOKEN_ADDRESS,
+            amount,
+            expiration,
+            nonce,
+          },
+          spender: TOKENBANK_ADDRESS,
+          sigDeadline: BigInt(sigDeadline),
+        },
+      });
+
+      // 调用 permitDeposit2
+      writeContract({
+        address: TOKENBANK_ADDRESS,
+        abi: TOKENBANK_ABI,
+        functionName: 'permitDeposit2',
+        args: [
+          assets,                    // uint256 assets
+          address,                   // address receiver
+          amount,                    // uint160 amount
+          expiration,               // uint48 expiration
+          55,                    // uint48 nonce
+          BigInt(sigDeadline),      // uint256 sigDeadline
+          signature,                // bytes signature
+        ],
+      });
+
+      setPermit2DepositAmount('');
+    } catch (error) {
+      console.error('Permit2 存款失败:', error);
+    } finally {
+      setIsPermit2Loading(false);
+    }
+  };
+
   // 提款
   const handleWithdraw = async () => {
     if (!address || !withdrawAmount) return;
@@ -171,6 +310,36 @@ export function TokenBankNew() {
       console.error('提款失败:', error);
     }
   };
+
+  // 授权 Token → Permit2
+  const handleApprovePermit2 = async () => {
+    if (!address) return;
+    
+    try {
+      const approveAmount = parseEther('1000000'); // 授权大额度，避免频繁授权
+      
+      writeContract({
+        address: TOKEN_ADDRESS,
+        abi: TOKEN_ABI,
+        functionName: 'approve',
+        args: [PERMIT2_ADDRESS, approveAmount],
+      });
+      
+      console.log('正在授权 Token → Permit2...');
+    } catch (error:any) {
+      console.error('授权失败:', error);
+      alert(`授权失败: ${error.message}`);
+    }
+  };
+
+  // 可选：定期更新时间戳
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setCurrentTimestamp(Math.floor(Date.now() / 1000));
+    }, 1000); // 每秒更新一次
+    
+    return () => clearInterval(interval);
+  }, []);
 
   if (!isConnected) {
     return (
@@ -235,7 +404,8 @@ export function TokenBankNew() {
           bgColor="bg-gradient-to-br from-amber-50 to-orange-50"
           iconBgColor="bg-gradient-to-br from-amber-500 to-orange-500"
           features={[
-            { icon: '✨', text: '签名存款' },
+            { icon: '✨', text: '原生 Permit 存款' },
+            { icon: '🔐', text: 'Permit2 存款' },
             { icon: '💰', text: '余额查询' },
             { icon: '🔄', text: '快速提款' },
             { icon: '📊', text: '交易记录' }
@@ -256,7 +426,7 @@ export function TokenBankNew() {
       />
       
       {/* 统计信息 */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <StatsCard
           icon="🏦"
           title="资金池总额"
@@ -276,43 +446,184 @@ export function TokenBankNew() {
           bgColor="bg-gradient-to-br from-emerald-500 to-teal-600"
           iconColor="bg-white/20"
         />
+
+        <StatsCard
+          icon="🔐"
+          title="Permit2 状态"
+          subtitle="Permit2 Status"
+          value={permit2DirectAllowance ? `Nonce: ${permit2DirectAllowance[2]}` : '未授权'}
+          unit=""
+          bgColor="bg-gradient-to-br from-purple-500 to-pink-600"
+          iconColor="bg-white/20"
+        />
       </div>
+
+      {/* 存款方式选择 */}
+      <InfoCard
+        icon="⚡"
+        title="选择存款方式"
+        subtitle="Choose Deposit Method"
+        iconColor="bg-gradient-to-br from-indigo-500 to-purple-600"
+      >
+        <div className="flex space-x-4">
+          <label className="flex items-center space-x-2 cursor-pointer">
+            <input
+              type="radio"
+              checked={depositMethod === 'permit'}
+              onChange={() => setDepositMethod('permit')}
+              className="text-blue-600"
+            />
+            <span className="text-sm font-medium">原生 Permit (EIP-2612)</span>
+          </label>
+          <label className="flex items-center space-x-2 cursor-pointer">
+            <input
+              type="radio"
+              checked={depositMethod === 'permit2'}
+              onChange={() => setDepositMethod('permit2')}
+              className="text-purple-600"
+            />
+            <span className="text-sm font-medium">Permit2 授权</span>
+          </label>
+        </div>
+      </InfoCard>
 
       {/* 操作区域 */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* 存款操作 */}
-        <InfoCard
-          icon="📥"
-          title="签名存款"
-          subtitle="一键授权并存款"
-          iconColor="bg-gradient-to-br from-blue-500 to-blue-600"
-        >
-          <div className="space-y-4">
-            <InputField
-              placeholder="输入存款金额"
-              value={depositAmount}
-              onChange={setDepositAmount}
-              suffix="FCAR"
-              type="number"
-            />
-            
-            <ActionButton
-              icon="✍️"
-              label="签名存款"
-              onClick={handlePermitDeposit}
-              disabled={!depositAmount}
-              loading={isLoading || isConfirming}
-              variant="primary"
-            />
-            
-            <StatusCard
-              icon="💡"
-              title=""
-              message="无需提前授权，签名后自动完成存款"
-              type="info"
-            />
-          </div>
-        </InfoCard>
+        {depositMethod === 'permit' ? (
+          <InfoCard
+            icon="📥"
+            title="原生 Permit 存款"
+            subtitle="EIP-2612 签名存款"
+            iconColor="bg-gradient-to-br from-blue-500 to-blue-600"
+          >
+            <div className="space-y-4">
+              <InputField
+                placeholder="输入存款金额"
+                value={depositAmount}
+                onChange={setDepositAmount}
+                suffix="FCAR"
+                type="number"
+              />
+              
+              <ActionButton
+                icon="✍️"
+                label="原生 Permit 存款"
+                onClick={handlePermitDeposit}
+                disabled={!depositAmount}
+                loading={isLoading || isConfirming}
+                variant="primary"
+              />
+              
+              <StatusCard
+                icon="💡"
+                title=""
+                message="使用代币原生 permit 功能，兼容性最好"
+                type="info"
+              />
+            </div>
+          </InfoCard>
+        ) : (
+          <InfoCard
+            icon="🔐"
+            title="Permit2 存款"
+            subtitle="Universal Permission System"
+            iconColor="bg-gradient-to-br from-purple-500 to-purple-600"
+          >
+            <div className="space-y-4">
+              {/* 第一层授权状态检查 */}
+              {tokenToPermit2Allowance && tokenToPermit2Allowance < parseEther('1000') && (
+                <div className="bg-amber-50 rounded-xl p-4 border border-amber-200">
+                  <div className="text-amber-800 text-sm font-medium mb-2">⚠️ 需要先授权代币</div>
+                  <div className="text-amber-700 text-xs mb-3">
+                    当前授权: {formatEther(tokenToPermit2Allowance)} FCAR → Permit2
+                  </div>
+                  <ActionButton
+                    icon="🔓"
+                    label="授权 Token → Permit2"
+                    onClick={handleApprovePermit2}
+                    variant="danger"
+                  />
+                </div>
+              )}
+
+              <InputField
+                placeholder="输入存款金额"
+                value={permit2DepositAmount}
+                onChange={setPermit2DepositAmount}
+                suffix="FCAR"
+                type="number"
+              />
+              
+              <ActionButton
+                icon="🔐"
+                label="Permit2 存款"
+                onClick={handlePermit2Deposit}
+                disabled={
+                  !permit2DepositAmount || 
+                  !tokenToPermit2Allowance || 
+                  tokenToPermit2Allowance < parseEther(permit2DepositAmount || '0')
+                }
+                loading={isPermit2Loading || isConfirming}
+                variant="primary"
+              />
+
+              {/* 显示两层授权状态 */}
+              <div className="space-y-2">
+                <div className="bg-blue-50 rounded-lg p-3">
+                  <div className="text-blue-800 text-sm font-medium">第一层授权 (Token → Permit2)</div>
+                  <div className="text-blue-700 text-xs">
+                    {tokenToPermit2Allowance 
+                      ? `✅ 已授权: ${formatEther(tokenToPermit2Allowance)} FCAR`
+                      : '❌ 未授权'}
+                  </div>
+                </div>
+              </div>
+
+              {/* Permit2 授权状态 */}
+              {permit2DirectAllowance && (
+                <div className="bg-purple-50 rounded-xl p-4 space-y-2">
+                  <div className="text-sm font-medium text-purple-800">Permit2 详细状态</div>
+                  <div className="space-y-1 text-xs text-purple-600">
+                    <div>当前授权: {formatEther(permit2DirectAllowance[0])} FCAR</div>
+                    <div>过期时间: {
+                      permit2DirectAllowance && Number(permit2DirectAllowance[1]) !== 0 
+                        ? new Date(Number(permit2DirectAllowance[1]) * 1000).toLocaleString()
+                        : '未设置（无授权）'
+                    }</div>
+                    <div>当前 Nonce: {permit2DirectAllowance[2].toString()}</div>
+                    <div>下次使用 Nonce: {getNextPermit2Nonce()}</div>
+                    <div className="mt-2 p-2 bg-white rounded border">
+                      <div className="text-purple-700 font-medium">状态:</div>
+                      <div className="text-purple-600">
+                        {Number(permit2DirectAllowance[1]) === 0 
+                          ? '🔒 未创建授权'           // 特殊处理 expiration = 0 的情况
+                          : Number(permit2DirectAllowance[1]) < Math.floor(Date.now() / 1000) 
+                          ? '❌ 授权已过期' 
+                          : permit2DirectAllowance[0] === BigInt(0) 
+                          ? '⚠️ 无授权额度' 
+                          : '✅ 授权有效'}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* 调试信息（开发时使用） */}
+              {process.env.NODE_ENV === 'development' && permit2DirectAllowance && (
+                <div className="bg-gray-50 rounded-xl p-4 space-y-2">
+                  <div className="text-sm font-medium text-gray-800">调试信息</div>
+                  <div className="space-y-1 text-xs text-gray-600 font-mono">
+                    <div>Raw Amount: {permit2DirectAllowance[0].toString()}</div>
+                    <div>Raw Expiration: {permit2DirectAllowance[1].toString()}</div>
+                    <div>Raw Nonce: {permit2DirectAllowance[2].toString()}</div>
+                    <div>Next Nonce: {getNextPermit2Nonce()}</div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </InfoCard>
+        )}
 
         {/* 提款操作 */}
         <InfoCard
