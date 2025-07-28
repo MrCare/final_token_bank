@@ -27,11 +27,11 @@ import {
   ActionButton,
   InputField
 } from './ui/base-components';
+import { notFound } from 'next/navigation';
 
 // Permit2 相关类型定义
 const PERMIT2_DOMAIN = {
   name: 'Permit2',
-  version: '1',
   chainId: 31337,
   verifyingContract: PERMIT2_ADDRESS, // 你的 Permit2 合约地址
 } as const;
@@ -58,7 +58,6 @@ export function TokenBankNew() {
   const [isLoading, setIsLoading] = useState(false);
   const [isPermit2Loading, setIsPermit2Loading] = useState(false);
   const [depositMethod, setDepositMethod] = useState<'permit' | 'permit2'>('permit');
-  const [currentTimestamp, setCurrentTimestamp] = useState(Math.floor(Date.now() / 1000));
   
   const { writeContract, data: hash } = useWriteContract();
   const { isLoading: isConfirming, isSuccess: isConfirmed } = useWaitForTransactionReceipt({
@@ -142,22 +141,36 @@ export function TokenBankNew() {
     },
   });
 
-  // 计算下一个可用的 nonce
+  // 计算下一个可用的 nonce - 改进版本
   const getNextPermit2Nonce = () => {
     if (permit2DirectAllowance && permit2DirectAllowance[2] !== undefined) {
-      // 如果当前授权已过期或金额为0，使用当前 nonce
       const currentTime = Math.floor(Date.now() / 1000);
       const expiration = Number(permit2DirectAllowance[1]);
       const amount = permit2DirectAllowance[0];
+      const currentNonce = Number(permit2DirectAllowance[2]);
 
-      if (expiration < currentTime || amount === BigInt(0)) {
-        return Number(permit2DirectAllowance[2]);
+      console.log('🔍 Nonce 计算详情:', {
+        currentTime,
+        expiration,
+        amount: amount.toString(),
+        currentNonce,
+        isExpired: expiration !== 0 && expiration < currentTime,
+        hasAmount: amount > BigInt(0)
+      });
+
+      // 如果没有有效授权（过期或无额度），使用当前 nonce
+      if (expiration === 0 || expiration < currentTime || amount === BigInt(0)) {
+        console.log('✅ 无有效授权，使用当前 nonce:', currentNonce);
+        return currentNonce;
       } else {
-        // 如果当前授权仍然有效，使用下一个 nonce
-        return Number(permit2DirectAllowance[2]) + 1;
+        // 如果有有效授权，使用下一个 nonce
+        const nextNonce = currentNonce + 1;
+        console.log('✅ 有有效授权，使用下一个 nonce:', nextNonce);
+        return nextNonce;
       }
     }
-    return 0; // 默认从 0 开始
+    console.log('✅ 未获取到授权信息，使用默认 nonce: 0');
+    return 0;
   };
 
   // 交易确认后刷新数据
@@ -186,7 +199,6 @@ export function TokenBankNew() {
         account: address,
         domain: {
           name: tokenName,
-          version: '1',
           chainId,
           verifyingContract: TOKEN_ADDRESS,
         },
@@ -236,9 +248,10 @@ export function TokenBankNew() {
       setIsPermit2Loading(true);
       const assets = parseEther(permit2DepositAmount);
       const amount = BigInt(assets.toString());
-      const expiration = Math.floor(Date.now() / 1000) + 864000; // 24小时过期
+      const expiration = Math.floor(Date.now() / 1000) + 3600 * 20; // 一小时
       const nonce = getNextPermit2Nonce(); // 使用正确的 nonce
-      const sigDeadline = Math.floor(Date.now() / 1000) + 864000; // 1小时签名过期
+      // const nonce = 5;
+      const sigDeadline = Math.floor(Date.now() / 1000) + 3600 * 24 * 30; // 十小时
 
       console.log('Permit2 参数:', {
         token: TOKEN_ADDRESS,
@@ -277,13 +290,13 @@ export function TokenBankNew() {
           address,                   // address receiver
           amount,                    // uint160 amount
           expiration,               // uint48 expiration
-          55,                    // uint48 nonce
+          nonce,                    // uint48 nonce
           BigInt(sigDeadline),      // uint256 sigDeadline
           signature,                // bytes signature
         ],
       });
 
-      setPermit2DepositAmount('');
+      // setPermit2DepositAmount('');
     } catch (error) {
       console.error('Permit2 存款失败:', error);
     } finally {
@@ -331,15 +344,6 @@ export function TokenBankNew() {
       alert(`授权失败: ${error.message}`);
     }
   };
-
-  // 可选：定期更新时间戳
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setCurrentTimestamp(Math.floor(Date.now() / 1000));
-    }, 1000); // 每秒更新一次
-    
-    return () => clearInterval(interval);
-  }, []);
 
   if (!isConnected) {
     return (
@@ -592,7 +596,7 @@ export function TokenBankNew() {
                         : '未设置（无授权）'
                     }</div>
                     <div>当前 Nonce: {permit2DirectAllowance[2].toString()}</div>
-                    <div>下次使用 Nonce: {getNextPermit2Nonce()}</div>
+                    {/* <div>下次使用 Nonce: {getNextPermit2Nonce()}</div> */}
                     <div className="mt-2 p-2 bg-white rounded border">
                       <div className="text-purple-700 font-medium">状态:</div>
                       <div className="text-purple-600">
@@ -617,7 +621,7 @@ export function TokenBankNew() {
                     <div>Raw Amount: {permit2DirectAllowance[0].toString()}</div>
                     <div>Raw Expiration: {permit2DirectAllowance[1].toString()}</div>
                     <div>Raw Nonce: {permit2DirectAllowance[2].toString()}</div>
-                    <div>Next Nonce: {getNextPermit2Nonce()}</div>
+                    {/* <div>Next Nonce: {getNextPermit2Nonce()}</div> */}
                   </div>
                 </div>
               )}

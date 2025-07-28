@@ -20,7 +20,7 @@ contract Deploy is Script {
         FinalCarToken finalCarToken = new FinalCarToken();
         console.log("FinalCarToken deployed to:", address(finalCarToken));
 
-        TokenBank tokenBank = new TokenBank(finalCarToken, address(0x5FC8d32690cc91D4c39d9d3abcBD16989F875707));
+        TokenBank tokenBank = new TokenBank(finalCarToken, address(0x000000000022D473030F116dDEE9F6B43aC78BA3));
         console.log("TokenBank deployed to:", address(tokenBank));
         console.log("TokenBank asset:", address(tokenBank.asset()));
 

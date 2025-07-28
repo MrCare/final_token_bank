@@ -678,7 +678,7 @@ export const TOKEN_ABI = [
   }
 ] as const;
 
-export const TOKENBANK_ADDRESS = '0xc6e7DF5E7b4f2A278906862b61205850344D4e7d' as Address; // Replace with your token bank address
+export const TOKENBANK_ADDRESS = '0xc3e53F4d16Ae77Db1c982e75a937B9f60FE63690' as Address; // Replace with your token bank address
 export const TOKENBANK_ABI = [
   {
     "type": "constructor",
@@ -1718,7 +1718,7 @@ export const TOKENBANK_ABI = [
   }
 ] as const;
 
-export const NFTMARKET_ADDRESS = '0x5FC8d32690cc91D4c39d9d3abcBD16989F875707';
+export const NFTMARKET_ADDRESS = '0x5FC8d32690cc91D4c39d9d3abcBD16989F875707' as Address;
 export const NFTMARKET_ABI = [
   {
     "type": "constructor",
@@ -2129,7 +2129,7 @@ export const NFTMARKET_ABI = [
     "inputs": []
   }
 ] as const;
-export const NFT_ADDRESS = '0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9';
+export const NFT_ADDRESS = '0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9' as Address;
 export const NFT_ABI = [
   {
     "type": "constructor",
@@ -2723,7 +2723,7 @@ export const NFT_ABI = [
   }
 ] as const;
 
-export const PERMIT2_ADDRESS = '0x000000000022D473030F116dDEE9F6B43aC78BA3'
+export const PERMIT2_ADDRESS = '0x000000000022D473030F116dDEE9F6B43aC78BA3' as Address;
 export const PERMIT2_ABI = [
   {
     "type": "function",

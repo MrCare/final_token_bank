@@ -1,0 +1,66 @@
+{
+  "domain": {
+    "name": "Permit2",
+    "chainId": 31337,
+    "verifyingContract": "0x000000000022D473030F116dDEE9F6B43aC78BA3"
+  },
+  "types": {
+    "EIP712Domain": [
+      {
+        "name": "name",
+        "type": "string"
+      },
+      {
+        "name": "chainId",
+        "type": "uint256"
+      },
+      {
+        "name": "verifyingContract",
+        "type": "address"
+      }
+    ],
+    "PermitSingle": [
+      {
+        "name": "details",
+        "type": "PermitDetails"
+      },
+      {
+        "name": "spender",
+        "type": "address"
+      },
+      {
+        "name": "sigDeadline",
+        "type": "uint256"
+      }
+    ],
+    "PermitDetails": [
+      {
+        "name": "token",
+        "type": "address"
+      },
+      {
+        "name": "amount",
+        "type": "uint160"
+      },
+      {
+        "name": "expiration",
+        "type": "uint48"
+      },
+      {
+        "name": "nonce",
+        "type": "uint48"
+      }
+    ]
+  },
+  "primaryType": "PermitSingle",
+  "message": {
+    "details": {
+      "token": "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0",
+      "amount": "1300000000000000000",
+      "expiration": 1753779042,
+      "nonce": 0
+    },
+    "spender": "0xc3e53F4d16Ae77Db1c982e75a937B9f60FE63690",
+    "sigDeadline": 1753696242
+  }
+}
